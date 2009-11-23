@@ -375,7 +375,7 @@ class CPIOArchiveWriterTest < Test::Unit::TestCase
       arch.mkdir "blah"
       arch.add_file("foo") { |sio| sio.write("foobar") }
       arch.add_file("barfoo") { |sio| sio.write("barfoo") }
-      arch.add_file("barfoo", 0111) { |sio| sio.write("wee") }
+      arch.add_file("barfoobaz", 0111) { |sio| sio.write("wee") }
     end
     CPIO::ArchiveReader.new(io).each_entry { |ent| expected -= 1 }
     assert_equal 0, expected
