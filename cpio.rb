@@ -98,7 +98,7 @@ module CPIO
     def self.unpack_data(data)
       contents = {}
       data.unpack(HeaderUnpackFormat).zip(Fields) do |(chunk,(size,name))|
-        contents[name] = Integer(chunk)
+        contents[name] = Integer("0#{chunk}")
       end
       contents
     end
@@ -401,7 +401,28 @@ class CPIOArchiveWriterTest < Test::Unit::TestCase
       end
     end
   end
-
+  
+  def test_adding_a_non_executable_file_should_preserve_said_mode
+    io = StringIO.new
+    archiver = CPIO::ArchiveWriter.new(io)
+    archiver.open do |arch|
+      arch.add_file("barfoo", 0444) { |sio| }
+    end
+    CPIO::ArchiveReader.new(io).each_entry do |ent| 
+      assert !ent.executable? && ent.file?
+    end
+  end
+  
+  def test_adding_an_executable_file_should_preserve_said_mode
+    io = StringIO.new
+    archiver = CPIO::ArchiveWriter.new(io)
+    archiver.open do |arch|
+      arch.add_file("barfoo", 0500) { |sio| }
+    end
+    CPIO::ArchiveReader.new(io).each_entry do |ent| 
+      assert ent.executable? && ent.file?
+    end
+  end
 end
 
 end
