@@ -70,15 +70,12 @@ module CPIO
       header = ArchiveHeader.from(io)
       filename = read_filename(header, io)
       data = read_data(header, io) 
-      if data.size != header.filesize
-        raise ArchiveFormatError, "Archive header seems to inaccurately contain length of the entry"
-      end
       new(header, filename, data)
     end
     
     def initialize(header, filename, data)
       @header = header
-      @filename = filename.chomp("\000")
+      @filename = filename
       @data = data
     end
     
@@ -89,11 +86,19 @@ module CPIO
   private
     
     def self.read_filename(header, io)
-      io.read(header.namesize)
+      fname = io.read(header.namesize)
+      if fname.size != header.namesize
+        raise ArchiveFormatError, "Archive header seems to innacurately contain length of filename"
+      end
+      fname.chomp("\000")
     end
 
     def self.read_data(header, io)
-      io.read(header.filesize)
+      data = io.read(header.filesize)
+      if data.size != header.filesize
+        raise ArchiveFormatError, "Archive header seems to inaccurately contain length of the entry"
+      end
+      data
     end
 
   end
