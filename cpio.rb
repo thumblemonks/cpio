@@ -68,9 +68,9 @@ module CPIO
     
     def to_data
       Fields.collect do |(width,name)|
-        raise ArchiveFormatError "Expected header to have key #{name}" unless @attrs.has_key?(name)
+        raise ArchiveFormatError, "Expected header to have key #{name}" unless @attrs.has_key?(name)
         val = @attrs[name].respond_to?(:to_proc) ? @attrs[name].call : @attrs[name]
-        raise ArchiveFormatError "Header value for #{name} exceeds max length of #{FieldMaxValues[name]}" if val > FieldMaxValues[name]
+        raise ArchiveFormatError, "Header value for #{name} exceeds max length of #{FieldMaxValues[name]}" if val > FieldMaxValues[name]
         sprintf("%0*o", Fields.rassoc(name).first, val)
       end.join('')
     end
@@ -134,6 +134,13 @@ module CPIO
       new(header, opts[:name], '')
     end
     
+    def self.new_file(opts)
+      mode = S_IFREG | opts[:mode]
+      header = ArchiveHeader.with_defaults(:mode => mode, :name => opts[:name], :filesize => opts[:io].size)
+      opts[:io].rewind
+      new(header, opts[:name], opts[:io].read)
+    end
+
     def self.new_trailer
       header = ArchiveHeader.with_defaults(:mode => S_IFREG, :name => TrailerMagic, :filesize => 0)
       new(header, TrailerMagic, '')
@@ -211,20 +218,20 @@ module CPIO
     end
 
     def mkdir(name, mode = 0555)
-      add_entry(:name => name, :mode => mode)
+      entry = ArchiveEntry.new_directory(:name => name, :mode => mode)
+      @io.write(entry.to_data)
     end
 
-    def add_file(name, mode)
+    def add_file(name, mode = 0444)
       file = StringIO.new
       yield(file)
-      add_entry(:name => name, :mode => mode, :io => file)
+      entry = ArchiveEntry.new_file(:name => name, :mode => mode, :io => file)
+      @io.write(entry.to_data)
     end
 
   private
     
     def add_entry(opts)
-      entry = ArchiveEntry.new_directory(:name => opts[:name], :mode => opts[:mode])
-      @io.write(entry.to_data)
     end
 
     def write_trailer
@@ -346,6 +353,53 @@ class CPIOArchiveWriterTest < Test::Unit::TestCase
     end
     CPIO::ArchiveReader.new(io).each_entry { |ent| expected -= 1 if ent.directory? }
     assert_equal 0, expected
+  end
+  
+  def test_making_files_should_work
+    expected = 2
+    io = StringIO.new
+    archiver = CPIO::ArchiveWriter.new(io)
+    archiver.open do |arch|
+      arch.add_file("foo") { |sio| sio.write("foobar") }
+      arch.add_file("barfoo") { |sio| sio.write("barfoo") }
+    end
+    CPIO::ArchiveReader.new(io).each_entry { |ent| expected -= 1 if ent.file? }
+    assert_equal 0, expected
+  end
+  
+  def test_making_files_and_directories_should_work
+    expected = 4
+    io = StringIO.new
+    archiver = CPIO::ArchiveWriter.new(io)
+    archiver.open do |arch|
+      arch.mkdir "blah"
+      arch.add_file("foo") { |sio| sio.write("foobar") }
+      arch.add_file("barfoo") { |sio| sio.write("barfoo") }
+      arch.add_file("barfoo", 0111) { |sio| sio.write("wee") }
+    end
+    CPIO::ArchiveReader.new(io).each_entry { |ent| expected -= 1 }
+    assert_equal 0, expected
+  end
+
+  def test_adding_empty_files_should_work
+    expected = 1
+    io = StringIO.new
+    archiver = CPIO::ArchiveWriter.new(io)
+    archiver.open do |arch|
+      arch.add_file("barfoo", 0111) { |sio| }
+    end
+    CPIO::ArchiveReader.new(io).each_entry { |ent| expected -= 1 if ent.file? }
+    assert_equal 0, expected
+  end
+
+  def test_adding_a_file_with_an_excessively_long_name_should_raise
+    archiver = CPIO::ArchiveWriter.new(StringIO.new)
+    assert_raise(CPIO::ArchiveFormatError) do
+      archiver.open do |arch|
+        name = "fffff" * (CPIO::ArchiveHeader::FieldMaxValues[:namesize])
+        arch.add_file(name) { |sio| }
+      end
+    end
   end
 
 end
